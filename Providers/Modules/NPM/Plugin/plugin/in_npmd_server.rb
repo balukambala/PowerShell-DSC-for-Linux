@@ -15,8 +15,10 @@ module Fluent
             require 'securerandom'
             require 'etc'
             require 'enumerator'
+            require 'pathname'
 
             require_relative 'npmd_config_lib'
+            require_relative 'oms_common'
         end
 
         CMD_START         = "StartNPM"
@@ -48,6 +50,12 @@ module Fluent
         NPMD_AGENT_CAPABILITY = "cap_net_raw+ep"
         NPMD_STATE_DIR = "/var/opt/microsoft/omsagent/npm_state"
         NPMD_VERSION_FILE_NAME = "npm_version"
+
+        OMS_AGENTGUID_FILE = "/etc/opt/microsoft/omsagent/agentid"
+        OMS_ADMIN_CONF_PATH_COMP_TOTAL = 8
+        OMS_ADMIN_CONF_PATH_COMP_WS_IDX = 5
+        GUID_LEN = 36
+
 
         config_param :omsadmin_conf_path,     :string, :default => "/etc/opt/microsoft/omsagent/conf/omsadmin.conf"
         config_param :location_unix_endpoint, :string, :default => "#{NPMD_STATE_DIR}/npmdagent.sock"
@@ -176,23 +184,9 @@ module Fluent
         end
 
         def get_fqdn
-            _ip = nil
-            _name = nil
-            Socket.ip_address_list.each do |addrinfo|
-                next unless addrinfo.ip?
-                if addrinfo.ipv4?
-                    next if addrinfo.ipv4_loopback? or
-                        addrinfo.ipv4_multicast?
-                else
-                    next if addrinfo.ipv6_linklocal? or
-                        addrinfo.ipv6_loopback? or
-                        addrinfo.ipv6_multicast?
-                end
-                _ip = addrinfo.ip_address
-                _name = addrinfo.getnameinfo.first
-                break if _ip != _name
-            end
-            _name
+            _fqdn = OMS::Common.get_fully_qualified_domain_name()
+            _fqdn = OMS::Common.get_hostname() if _fqdn.nil?
+            _fqdn
         end
 
         def check_and_get_json(text)
@@ -421,7 +415,35 @@ module Fluent
 
         end
 
+        def get_workspace_id()
+            if !@omsadmin_conf_path.nil?
+                path = nil
+                begin
+                    path = Pathname.new(@omsadmin_conf_path).cleanpath
+                rescue
+                    return nil
+                end
+                _arr = "#{path}".split('/')
+                if (_arr.length == OMS_ADMIN_CONF_PATH_COMP_TOTAL and _arr[OMS_ADMIN_CONF_PATH_COMP_WS_IDX].length == GUID_LEN)
+                    return _arr[OMS_ADMIN_CONF_PATH_COMP_WS_IDX]
+                end
+            end
+            nil
+        end
+
+        def get_agent_id_from_guid_file()
+            ws_id = get_workspace_id()
+            if !ws_id.nil? and File.exist?(OMS_AGENTGUID_FILE)
+                computer_id = File.read(OMS_AGENTGUID_FILE, GUID_LEN).strip
+                return "#{computer_id}##{ws_id}" if computer_id.length == GUID_LEN
+            end
+            nil
+        end
+
         def get_agent_id
+            agentguid = get_agent_id_from_guid_file()
+            return agentguid if !agentguid.nil?
+
             agentid_lines = IO.readlines(@omsadmin_conf_path).select { |line| line.start_with?("AGENT_GUID=")}
             if agentid_lines.size == 0
                 return nil

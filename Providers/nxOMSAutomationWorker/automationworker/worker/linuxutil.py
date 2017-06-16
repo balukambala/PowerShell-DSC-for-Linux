@@ -234,6 +234,7 @@ def get_oms_agent_id():
         string, the agent id
         None,   if no agent id can be fouud
     """
+    # TODO: have emailed Bhaskar to work with on refactoring this
     omsadmin_filepath = "/etc/opt/microsoft/omsagent/conf/omsadmin.conf"
     agent_guid_delimiter = "AGENT_GUID="
     agent_id = None

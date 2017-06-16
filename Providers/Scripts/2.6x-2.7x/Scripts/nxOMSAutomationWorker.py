@@ -512,6 +512,7 @@ def get_workspaceid_agentid_from_oms_config():
 
     keyvals = read_omsconfig_file()
     try:
+        # TODO will also have to refactor this to get agent id from new location
         return keyvals[OPTION_OMS_WORKSPACE_ID].strip(), keyvals[OPTION_AGENT_ID].strip()
     except KeyError, exception:
         log(DEBUG, str(exception))
