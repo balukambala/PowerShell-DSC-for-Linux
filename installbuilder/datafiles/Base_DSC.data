@@ -33,7 +33,10 @@ SHLIB_EXT: 'so'
 /opt/microsoft/${{SHORT_NAME}}/Scripts/RegenerateInitFiles.py; intermediate/Scripts/RegenerateInitFiles.py; 755; ${{RUN_AS_USER}}; root
 /opt/microsoft/${{SHORT_NAME}}/Scripts/RegisterHelper.sh; intermediate/Scripts/RegisterHelper.sh; 755; ${{RUN_AS_USER}}; root
 /opt/microsoft/${{SHORT_NAME}}/Scripts/Register.py; intermediate/Scripts/Register.py; 755; ${{RUN_AS_USER}}; root
-/opt/microsoft/${{SHORT_NAME}}/Scripts/StatusReport.sh; intermediate/Scripts/StatusReport.sh; 755; ${{RUN_AS_USER}}; root
+/opt/microsoft/${{SHORT_NAME}}/Scripts/all_dsc_report_helper.py; intermediate/Scripts/all_dsc_report_helper.py; 755; ${{RUN_AS_USER}}; root
+/opt/microsoft/${{SHORT_NAME}}/Scripts/desired_state_resources_report_helper.py; intermediate/Scripts/desired_state_resources_report_helper.py; 755; ${{RUN_AS_USER}}; root
+/opt/microsoft/${{SHORT_NAME}}/Scripts/error_dsc_report.py; intermediate/Scripts/error_dsc_report.py; 755; ${{RUN_AS_USER}}; root
+/opt/microsoft/${{SHORT_NAME}}/Scripts/start_report.py; intermediate/Scripts/start_report.py; 755; ${{RUN_AS_USER}}; root
 /opt/microsoft/${{SHORT_NAME}}/Scripts/helperlib.py; intermediate/Scripts/helperlib.py; 755; ${{RUN_AS_USER}}; root
 /opt/microsoft/${{SHORT_NAME}}/Scripts/ImportGPGKey.sh; intermediate/Scripts/ImportGPGKey.sh; 755; ${{RUN_AS_USER}}; root
 
