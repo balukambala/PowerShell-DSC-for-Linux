@@ -31,7 +31,7 @@ extern Loc_Mapping g_LocMappingTable[];
 extern MI_Uint32 g_LocMappingTableSize;
 void *g_registrationManager;
 char g_currentError[5001];
-StatusReport_ResourceNotInDesiredState * g_rnids = NULL;
+MI_Boolean failedResources;
 
 
 BaseResourceConfiguration g_BaseResourceConfiguration[] =
@@ -1270,7 +1270,7 @@ MI_Char* DSC_strdup(MI_Char* s)
     return result;
 }
 
-StatusReport_ResourceNotInDesiredState * Construct_StatusReport_RNIDS(
+StatusReport_ResourceDesiredState * Construct_StatusReport_RNIDS(
     char* SourceInfo,
     char* ModuleName,
     char* DurationInSeconds,
@@ -1281,10 +1281,11 @@ StatusReport_ResourceNotInDesiredState * Construct_StatusReport_RNIDS(
     char* RebootRequested,
     char* ResourceId,
     char* ConfigurationName,
-    char* InDesiredState
+    char* InDesiredState,
+    char* Error
     )
 {
-    StatusReport_ResourceNotInDesiredState * ptr = (StatusReport_ResourceNotInDesiredState *) DSC_malloc(sizeof(StatusReport_ResourceNotInDesiredState), NitsHere());
+    StatusReport_ResourceDesiredState * ptr = (StatusReport_ResourceDesiredState *) DSC_malloc(sizeof(StatusReport_ResourceDesiredState), NitsHere());
     ptr->SourceInfo = DSC_strdup(SourceInfo);
     ptr->ModuleName = DSC_strdup(ModuleName);
     ptr->DurationInSeconds = DSC_strdup(DurationInSeconds);
@@ -1296,10 +1297,82 @@ StatusReport_ResourceNotInDesiredState * Construct_StatusReport_RNIDS(
     ptr->ResourceId = DSC_strdup(ResourceId);
     ptr->ConfigurationName = DSC_strdup(ConfigurationName);
     ptr->InDesiredState = DSC_strdup(InDesiredState);
+    ptr->Error = DSC_strdup(Error);
     return ptr;
 }
 
-void Destroy_StatusReport_RNIDS(StatusReport_ResourceNotInDesiredState* ptr)
+// Contains a list of resource reports
+struct reportNodes
+{
+    StatusReport_ResourceDesiredState *data;
+    struct reportNodes *next;
+}*reportHead;
+
+// Adds a resource report to a list
+void AddReportItem( StatusReport_ResourceDesiredState *value )
+{
+    struct reportNodes *temp = (struct reportNodes *)DSC_malloc(sizeof(struct reportNodes),NitsHere());
+    temp->data=value;
+    if (reportHead== NULL)
+    {
+        reportHead=temp;
+        reportHead->next=NULL;
+    }
+    else
+    {
+        temp->next=reportHead;
+        reportHead=temp;
+    }
+}
+
+ // Gets the last entered resource report from the list
+StatusReport_ResourceDesiredState* GetTopReportItem() {
+  StatusReport_ResourceDesiredState *temp;
+  if (reportHead) {
+    temp = reportHead->data;
+    reportHead = reportHead->next;
+    return temp;
+  }
+  return NULL;
+}
+
+// Contains a list of failed resource reports
+struct reportFailedNodes
+{
+    StatusReport_ResourceDesiredState *data;
+    struct reportFailedNodes *next;
+}*reportFailedHead;
+
+// Adds a failed resource report to a list
+void AddFailedReportItem( StatusReport_ResourceDesiredState *value )
+{
+    struct reportFailedNodes *temp = (struct reportFailedNodes *)DSC_malloc(sizeof(struct reportFailedNodes),NitsHere());
+    temp->data=value;
+    if (reportFailedHead== NULL)
+    {
+        reportFailedHead=temp;
+        reportFailedHead->next=NULL;
+    }
+    else
+    {
+        temp->next=reportFailedHead;
+        reportFailedHead=temp;
+    }
+}
+
+ // Gets the last entered failed resource report from the list
+StatusReport_ResourceDesiredState* GetTopFailedReportItem() {
+  StatusReport_ResourceDesiredState *temp;
+  if (reportFailedHead) {
+    temp = reportFailedHead->data;
+    reportFailedHead = reportFailedHead->next;
+    return temp;
+  }
+  return NULL;
+}
+
+
+void Destroy_StatusReport_RNIDS(StatusReport_ResourceDesiredState* ptr)
 {
     if (ptr == NULL)
         return;
@@ -1326,5 +1399,6 @@ void Destroy_StatusReport_RNIDS(StatusReport_ResourceNotInDesiredState* ptr)
         DSC_free(ptr->ConfigurationName);
     if (ptr->InDesiredState != NULL)
         DSC_free(ptr->InDesiredState);
-
+    if (ptr->Error != NULL)
+        DSC_free(ptr->Error);
 }
