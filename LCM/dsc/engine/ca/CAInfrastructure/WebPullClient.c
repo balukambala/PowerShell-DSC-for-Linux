@@ -2766,6 +2766,7 @@ MI_Result MI_CALL Pull_SendStatusReport(_In_ LCMProviderContext *lcmContext,
     const char *emptyString = "";
     MI_Char actionUrl[MAX_URL_LENGTH];
     char dataBuffer[10000];
+    MI_Uint32 resourceCount = 0;
 
     char * getActionStatus = NULL;
     long responseCode;
@@ -2780,7 +2781,12 @@ MI_Result MI_CALL Pull_SendStatusReport(_In_ LCMProviderContext *lcmContext,
     MI_Value agentId;
     MI_Value serverURL;
     MI_Value endTime;
+    MI_Char startTime[MAX_PATH] = {0};
     MI_Uint32 flags;
+    MI_Value configurationMode;
+    MI_Value rebootIfNeeded;
+    MI_Char endReportTime[MAX_PATH] = {0};   
+
     int i;
     const char* commandFormat;
     const char* reportText;
@@ -2801,6 +2807,18 @@ MI_Result MI_CALL Pull_SendStatusReport(_In_ LCMProviderContext *lcmContext,
 
     r = DSC_MI_Instance_GetElement(metaConfig, "AgentId", &agentId, NULL, NULL, NULL);
 
+    r = DSC_MI_Instance_GetElement(metaConfig, MSFT_DSCMetaConfiguration_ConfigurationMode, &configurationMode, NULL, NULL, NULL);
+    if (r != MI_RESULT_OK)
+    {
+        return r;
+    }
+
+    r = DSC_MI_Instance_GetElement(metaConfig, MSFT_DSCMetaConfiguration_RebootNodeIfNeeded, &rebootIfNeeded, NULL, NULL, NULL);
+    if (r != MI_RESULT_OK)
+    {
+        return r;
+    }
+
     list = curl_slist_append(list, "Accept: application/json");
     list = curl_slist_append(list, "Content-Type: application/json; charset=utf-8");
     list = curl_slist_append(list, "ProtocolVersion: 2.0");
@@ -2809,42 +2827,99 @@ MI_Result MI_CALL Pull_SendStatusReport(_In_ LCMProviderContext *lcmContext,
     {
         r = MI_Instance_GetElement((MI_Instance*)managerInstances.stringa.data[i], MSFT_ServerURL_Name, &serverURL, NULL, NULL, NULL);
 
+        // Get start time for report
+        r = GetNextRefreshTimeHelper(startTime);
+
+        if (r != MI_RESULT_OK)
+        {
+            return MI_RESULT_FAILED;
+        }
+
         r = MI_Instance_GetElement(statusReport, REPORTING_ENDTIME, &endTime, NULL, &flags, 0);
+        // Get end report time
+        Stprintf(endReportTime, MAX_PATH, MI_T("%04d-%02d-%02dT%02d:%02d:%02d"), endTime.datetime.u.timestamp.year,  endTime.datetime.u.timestamp.month, endTime.datetime.u.timestamp.day, endTime.datetime.u.timestamp.hour, endTime.datetime.u.timestamp.minute, endTime.datetime.u.timestamp.second);
+
         if (r != MI_RESULT_OK || (flags & MI_FLAG_NULL) || (endTime.datetime.u.timestamp.year == 0))
         {
-            // not the End report
-            commandFormat =  DSC_SCRIPT_PATH "/StatusReport.sh %s StartTime";
-            snprintf(dataBuffer, 10000, commandFormat, g_ConfigurationDetails.jobGuidString);
+            commandFormat =  DSC_SCRIPT_PATH "/start_report.py -j %s -t \"%s\"";
+            snprintf(dataBuffer, 10000, commandFormat, g_ConfigurationDetails.jobGuidString, (MI_Char*)startTime);
         }
         else
-        {
-            if (g_currentError[0] == '\0')
+        {          
+            // Send the report
+            if (g_currentError[0] == '\0' || g_currentError[0] == 'C')
             {
-                commandFormat =  DSC_SCRIPT_PATH "/StatusReport.sh %s EndTime";
-                snprintf(dataBuffer, 10000, commandFormat, g_ConfigurationDetails.jobGuidString);
+                StatusReport_ResourceDesiredState *reportItem = GetTopReportItem();
+                if (reportItem != NULL)
+                {
+                    resourceCount++;
+                    commandFormat =  DSC_SCRIPT_PATH "/desired_state_resources_report_helper.py -s \"%s\" -m \"%s\" -d \"%s\" -i \"%s\" -t \"%s\" -n \"%s\" -a \"%s\" -v \"%s\" -b \"%s\" -r \"%s\" -c \"%s\" -k \"%s\"";
+                    snprintf(dataBuffer, 10000, commandFormat, reportItem->SourceInfo,
+                            reportItem->ModuleName, reportItem->DurationInSeconds, reportItem->InstanceName, reportItem->StartDate, reportItem->ResourceName, reportItem->Error,
+                            reportItem->ModuleVersion, reportItem->RebootRequested, reportItem->ResourceId, reportItem->ConfigurationName, reportItem->InDesiredState);
+                    reportText = RunCommand(dataBuffer);
+                    Destroy_StatusReport_RNIDS(reportItem); 
+                    reportItem = GetTopReportItem();              
+                    while (reportItem != NULL)
+                    { 
+                        resourceCount++;
+                        memset(dataBuffer,0,sizeof(dataBuffer));
+                        commandFormat =  DSC_SCRIPT_PATH "/desired_state_resources_report_helper.py -e \"%s\" -s \"%s\" -m \"%s\" -d \"%s\" -i \"%s\" -t \"%s\" -n \"%s\" -a \"%s\" -v \"%s\" -b \"%s\" -r \"%s\" -c \"%s\" -k \"%s\"";
+                        snprintf(dataBuffer, 10000, commandFormat, reportText, reportItem->SourceInfo,
+                                reportItem->ModuleName, reportItem->DurationInSeconds, reportItem->InstanceName, reportItem->StartDate, reportItem->ResourceName, reportItem->Error,
+                                reportItem->ModuleVersion, reportItem->RebootRequested, reportItem->ResourceId, reportItem->ConfigurationName, reportItem->InDesiredState);
+                        DSC_free(reportText);
+                        reportText = RunCommand(dataBuffer);
+                        Destroy_StatusReport_RNIDS(reportItem);
+                        reportItem = GetTopReportItem();
+                    }
+                    commandFormat =  DSC_SCRIPT_PATH "/all_dsc_report_helper.py -j \"%s\" -a \"%s\" -f \"%s\" -h \"%d\" -t \"%s\" -l \"%s\" -e \"%s\"";
+                    snprintf(dataBuffer, 10000, commandFormat, g_ConfigurationDetails.jobGuidString, configurationMode.string,
+                            (rebootIfNeeded.boolean)?"True":"False", resourceCount, (MI_Char*)startTime, (MI_Char*)endReportTime, reportText);
+                }
             }
             else
             {
-                if (g_rnids == NULL)
+                StatusReport_ResourceDesiredState *reportItem = GetTopFailedReportItem();
+                if (reportItem != NULL)
                 {
-                    commandFormat =  DSC_SCRIPT_PATH "/StatusReport.sh %s EndTime \"%s\"";
-                    snprintf(dataBuffer, 10000, commandFormat, g_ConfigurationDetails.jobGuidString, g_currentError);
+                    resourceCount++;
+                    commandFormat =  DSC_SCRIPT_PATH "/desired_state_resources_report_helper.py -s \"%s\" -m \"%s\" -d \"%s\" -i \"%s\" -t \"%s\" -n \"%s\" -a \"%s\" -v \"%s\" -b \"%s\" -r \"%s\" -c \"%s\" -k \"%s\"";
+                    snprintf(dataBuffer, 10000, commandFormat, reportItem->SourceInfo,
+                            reportItem->ModuleName, reportItem->DurationInSeconds, reportItem->InstanceName, reportItem->StartDate, reportItem->ResourceName, reportItem->Error,
+                            reportItem->ModuleVersion, reportItem->RebootRequested, reportItem->ResourceId, reportItem->ConfigurationName, reportItem->InDesiredState);
+                    reportText = RunCommand(dataBuffer);
+                    Destroy_StatusReport_RNIDS(reportItem); 
+                    reportItem = GetTopFailedReportItem();              
+                    while (reportItem != NULL)
+                    { 
+                        resourceCount++;
+                        memset(dataBuffer,0,sizeof(dataBuffer));
+                        commandFormat =  DSC_SCRIPT_PATH "/desired_state_resources_report_helper.py -e \"%s\" -s \"%s\" -m \"%s\" -d \"%s\" -i \"%s\" -t \"%s\" -n \"%s\" -a \"%s\" -v \"%s\" -b \"%s\" -r \"%s\" -c \"%s\" -k \"%s\"";
+                        snprintf(dataBuffer, 10000, commandFormat, reportText, reportItem->SourceInfo,
+                                reportItem->ModuleName, reportItem->DurationInSeconds, reportItem->InstanceName, reportItem->StartDate, reportItem->ResourceName, reportItem->Error,
+                                reportItem->ModuleVersion, reportItem->RebootRequested, reportItem->ResourceId, reportItem->ConfigurationName, reportItem->InDesiredState);
+                        DSC_free(reportText);
+                        reportText = RunCommand(dataBuffer);
+                        Destroy_StatusReport_RNIDS(reportItem);
+                        reportItem = GetTopFailedReportItem();
+                    }
+                        commandFormat =  DSC_SCRIPT_PATH "/all_dsc_report_helper.py -j \"%s\" -a \"%s\" -f \"%s\" -p \"%s\" -h \"%d\" -t \"%s\" -l \"%s\" -e \"%s\"";
+                        snprintf(dataBuffer, 10000, commandFormat, g_ConfigurationDetails.jobGuidString, configurationMode.string,
+                                (rebootIfNeeded.boolean)?"True":"False", "The SendConfigurationApply function did not succeed.", resourceCount, (MI_Char*)startTime, (MI_Char*)endReportTime, reportText); 
                 }
                 else
                 {
-                    commandFormat =  DSC_SCRIPT_PATH "/StatusReport.sh %s EndTime \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" \"%s\" ";
-                    snprintf(dataBuffer, 10000, commandFormat, g_ConfigurationDetails.jobGuidString, g_currentError, g_rnids->SourceInfo,
-                             g_rnids->ModuleName, g_rnids->DurationInSeconds, g_rnids->InstanceName, g_rnids->StartDate, g_rnids->ResourceName,
-                             g_rnids->ModuleVersion, g_rnids->RebootRequested, g_rnids->ResourceId, g_rnids->ConfigurationName, g_rnids->InDesiredState);
-                    Destroy_StatusReport_RNIDS(g_rnids);
-                    g_rnids = NULL;
-                    
-                }
+                    // If we have an error and we have processed all the failed resources, then send the final error status report
+                    memset(dataBuffer,0,sizeof(dataBuffer));
+                    commandFormat =  DSC_SCRIPT_PATH "/error_dsc_report.py -j %s -t \"%s\"";
+                    snprintf(dataBuffer, 10000, commandFormat, g_ConfigurationDetails.jobGuidString, (MI_Char*)startTime);
+                }              
             }
         }
 
         reportText = RunCommand(dataBuffer);
-        
+
         curl = curl_easy_init();
 
 	r = SetGeneralCurlOptions(curl, extendedError);

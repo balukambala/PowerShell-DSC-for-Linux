@@ -647,7 +647,7 @@ typedef struct _LCMProviderContext
 
 MI_Char* DSC_strdup(MI_Char* s);
 
-typedef struct _StatusReport_ResourceNotInDesiredState
+typedef struct _StatusReport_ResourceDesiredState
 {
     char * SourceInfo;
     char * ModuleName;
@@ -660,10 +660,11 @@ typedef struct _StatusReport_ResourceNotInDesiredState
     char * ResourceId;
     char * ConfigurationName;
     char * InDesiredState;
+    char * Error;
 
-} StatusReport_ResourceNotInDesiredState;
+} StatusReport_ResourceDesiredState;
 
-StatusReport_ResourceNotInDesiredState * Construct_StatusReport_RNIDS(
+StatusReport_ResourceDesiredState * Construct_StatusReport_RNIDS(
     char* SourceInfo,
     char* ModuleName,
     char* DurationInSeconds,
@@ -674,10 +675,17 @@ StatusReport_ResourceNotInDesiredState * Construct_StatusReport_RNIDS(
     char* RebootRequested,
     char* ResourceId,
     char* ConfigurationName,
-    char* InDesiredState
+    char* InDesiredState,
+    char* Error
     );
 
-void Destroy_StatusReport_RNIDS(StatusReport_ResourceNotInDesiredState* ptr);
+void Destroy_StatusReport_RNIDS(StatusReport_ResourceDesiredState* ptr);
+
+void AddReportItem( StatusReport_ResourceDesiredState* value );
+StatusReport_ResourceDesiredState* GetTopReportItem();
+
+void AddFailedReportItem( StatusReport_ResourceDesiredState* value );
+StatusReport_ResourceDesiredState* GetTopFailedReportItem();
 
 // Structres to represent the V2 pullserver response for GetAction
 typedef struct GetActionConfigurationStatus
@@ -907,7 +915,7 @@ MI_Result StripBracesFromGuid(
 MI_Datetime PalDatetimeToMiDatetime(_In_ PAL_Datetime inDatetime);
 
 extern char g_currentError[5001];
-extern StatusReport_ResourceNotInDesiredState * g_rnids;
+extern MI_Boolean failedResources;
 extern MSFT_DSCMetaConfiguration *g_metaConfig;
 
 

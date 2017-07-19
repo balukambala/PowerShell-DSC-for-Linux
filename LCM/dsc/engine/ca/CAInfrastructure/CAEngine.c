@@ -211,8 +211,7 @@ MI_Result GetDocumentEncryptionSetting( _In_ MI_Instance *documentIns,
 
 MI_Result InitCAHandler(_Outptr_result_maybenull_ MI_Instance **cimErrorDetails)
 {
-    g_rnids = NULL;
-
+    failedResources = FALSE;
     if (cimErrorDetails == NULL)
     {        
         return MI_RESULT_INVALID_PARAMETER; 
@@ -231,9 +230,6 @@ MI_Result InitCAHandler(_Outptr_result_maybenull_ MI_Instance **cimErrorDetails)
 
 MI_Result UnInitCAHandler(_Outptr_result_maybenull_ MI_Instance **cimErrorDetails)
 {
-    Destroy_StatusReport_RNIDS(g_rnids);
-    g_rnids = NULL;
-
     if (cimErrorDetails == NULL)
     {        
         return MI_RESULT_INVALID_PARAMETER; 
@@ -635,6 +631,9 @@ MI_Result SetResourcesInOrder(_In_ LCMProviderContext *lcmContext,
     DSC_EventWriteMessageSettingResourcesOrder(executionOrder->executionListSize);
     moduleLoader = (ModuleLoaderObject*) moduleManager->reserved2;
 
+    // Set failed resources flag to false before checking each one.
+    failedResources = FALSE;
+
     if (extendedError == NULL)
     {        
         return MI_RESULT_INVALID_PARAMETER; 
@@ -742,6 +741,12 @@ MI_Result SetResourcesInOrder(_In_ LCMProviderContext *lcmContext,
         MI_Instance_Delete(filteredInstance);
         filteredInstance = NULL;
         
+        // If we have processed all the items and there is an error, set status to false
+        if (executionOrder->executionListSize == (xCount +1 ) && (failedResources == TRUE)) 
+        {
+            *resultStatus = 0;
+        }
+
         if (r != MI_RESULT_OK)
         {        
             // Failure case, update the resource status
@@ -799,13 +804,6 @@ MI_Result SetResourcesInOrder(_In_ LCMProviderContext *lcmContext,
             }
 
             continue;
-        }
-        // Success Case
-
-        if (resultStatus != NULL && *resultStatus == MI_TRUE)
-        {
-            Destroy_StatusReport_RNIDS(g_rnids);
-            g_rnids = NULL;
         }
 
         executionOrder->ExecutionList[xCount].resourceStatus = ResourceProcessedAndSucceeded;
@@ -1235,9 +1233,19 @@ MI_Result Exec_WMIv2Provider(_In_ ProviderCallbackContext *provContext,
     MI_OperationCallbacks callbacks = MI_OPERATIONCALLBACKS_NULL;
     MI_Real64 duration;
     MI_OperationOptions sessionOptions;
-    const MI_Char * instanceNamespace;    
+    MI_Value errorValue; 
+    MI_Result errorResult = MI_RESULT_OK;
+    const MI_Char * instanceNamespace; 
+    MI_Char startTime[MAX_PATH] = {0};  
    
     ptrdiff_t start,finish;
+
+    result = GetNextRefreshTimeHelper(startTime);
+
+    if (result != MI_RESULT_OK)
+    {
+        return MI_RESULT_FAILED;
+    }
 
     //we don't have reginstance for meta configuration
     if (Tcscasecmp(instance->classDecl->name, METACONFIG_CLASSNAME) == 0)
@@ -1414,8 +1422,12 @@ MI_Result Exec_WMIv2Provider(_In_ ProviderCallbackContext *provContext,
             MI_Instance_Delete(params);            
             MI_OperationOptions_Delete(&sessionOptions);
             AddToResourceErrorList(resourceErrorList, provContext->resourceId);
-            Destroy_StatusReport_RNIDS(g_rnids);
-            g_rnids = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, "0", instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "False");
+            failedResources = TRUE;
+
+            // Add not in desired state resource report to list.
+            StatusReport_ResourceDesiredState * report = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, (MI_Char*)startTime, instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "False", "");
+            AddReportItem(report);
+           
             return r;
         }
 
@@ -1428,15 +1440,19 @@ MI_Result Exec_WMIv2Provider(_In_ ProviderCallbackContext *provContext,
         /* Skip rest of the operation if we were asked just to test.*/
         if (flags & LCM_EXECUTE_TESTONLY)
         {
+            // Set result status to ok
+            *resultStatus = 1;
             if(bTestResult == MI_TRUE)
             {
-                *resultStatus = 1;
+                // Add in desired state resource report to list.
+                StatusReport_ResourceDesiredState * report = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, (MI_Char*)startTime, instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "True", "");
+                AddReportItem(report);
             }
             else
             {
-                *resultStatus = 0;
-                Destroy_StatusReport_RNIDS(g_rnids);
-                g_rnids = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, "0", instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "False");
+                failedResources = TRUE;
+                StatusReport_ResourceDesiredState * report = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, (MI_Char*)startTime, instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "False", "");
+                AddReportItem(report);
             }
 
             MI_Instance_Delete(params);
@@ -1451,6 +1467,8 @@ MI_Result Exec_WMIv2Provider(_In_ ProviderCallbackContext *provContext,
             LogCAMessage(provContext->lcmProviderContext, ID_OUTPUT_EMPTYSTRING, provContext->resourceId);
             MI_Instance_Delete(params);        
             MI_OperationOptions_Delete(&sessionOptions);
+            StatusReport_ResourceDesiredState * report = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, (MI_Char*)startTime, instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "True", "");
+            AddReportItem(report);
             return MI_RESULT_OK;
         }
 
@@ -1500,17 +1518,28 @@ MI_Result Exec_WMIv2Provider(_In_ ProviderCallbackContext *provContext,
         {
             MI_OperationOptions_Delete(&sessionOptions);
             AddToResourceErrorList(resourceErrorList, provContext->resourceId);
-            Destroy_StatusReport_RNIDS(g_rnids);
-            g_rnids = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, NULL, instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "False");
+            // Add not in desired state resource report to list.
+            failedResources = TRUE;
+            // Get error message
+            errorResult = DSC_MI_Instance_GetElement(*extendedError, MSFT_WMIERROR_MESSAGE, &errorValue, NULL, NULL, NULL);
+            if (errorResult == MI_RESULT_OK)
+            {
+                StatusReport_ResourceDesiredState * report = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, (MI_Char*)startTime, instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "False", errorValue.string);
+                AddReportItem(report);
+                StatusReport_ResourceDesiredState * failedReport = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, (MI_Char*)startTime, instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "False", errorValue.string);
+                AddFailedReportItem(failedReport);
+            }
             return r;
         }
 
         *resultStatus = returnValue;
         if (returnValue != MI_TRUE)
         {
-            Destroy_StatusReport_RNIDS(g_rnids);
-            g_rnids = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, NULL, instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "False");
-        }
+            failedResources = TRUE;
+            // Add not in desired state resource report to list.
+            StatusReport_ResourceDesiredState * report = Construct_StatusReport_RNIDS(GetSourceInfo(instance), GetModuleName(instance), "0", provContext->resourceId, (MI_Char*)startTime, instance->classDecl->name, GetModuleVersion(instance), "False", provContext->resourceId, "", "False","");
+            AddReportItem(report);
+    }
         //Stop the timer for set
         finish=CPU_GetTimeStamp();
         duration = (MI_Real64)(finish- start) / TIME_PER_SECONND;

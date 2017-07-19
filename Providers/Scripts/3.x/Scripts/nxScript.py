@@ -227,13 +227,12 @@ def Set(GetScript, SetScript, TestScript, User, Group):
     proc = subprocess.Popen(command, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, preexec_fn=PreExec(uid, gid, User))
     exit_code = proc.wait()
-    Print("stdout: " + proc.stdout.read().decode('utf8', 'replace'))
-    LG().Log('INFO', "stdout: " +
-             proc.stdout.read().decode('utf8', 'replace'))
-    Print("stderr: " + proc.stderr.read().decode('utf8', 'replace'))
-    LG().Log('INFO', "stderr: " +
-             proc.stderr.read().decode('utf8', 'replace'))
-
+    std_out = proc.stdout.read().decode('utf8', 'replace')
+    Print("stdout: " + std_out)
+    LG().Log('INFO', "stdout: " + std_out)
+    std_err = proc.stderr.read().decode('utf8', 'replace')
+    Print("stderr: " + std_err)
+    LG().Log('ERROR', "stderr: " + std_err)
     os.remove(path)
     return [exit_code]
 
@@ -267,12 +266,12 @@ def Test(GetScript, SetScript, TestScript, User, Group):
     proc = subprocess.Popen(command, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, preexec_fn=PreExec(uid, gid, User))
     exit_code = proc.wait()
-    Print("stdout: " + proc.stdout.read().decode('utf8', 'replace'))
-    LG().Log('INFO', "stdout: " +
-             proc.stdout.read().decode('utf8', 'replace'))
-    Print("stderr: " + proc.stderr.read().decode('utf8', 'replace'))
-    LG().Log('INFO', "stderr: " +
-             proc.stderr.read().decode('utf8', 'replace'))
+    std_out = proc.stdout.read().decode('utf8', 'replace')
+    Print("stdout: " + std_out)
+    LG().Log('INFO', "stdout: " + std_out)
+    std_err = proc.stderr.read().decode('utf8', 'replace')
+    Print("stderr: " + std_err)
+    LG().Log('ERROR', "stderr: " + std_err)
 
     os.remove(path)
     return [exit_code]
@@ -311,9 +310,9 @@ def Get(GetScript, SetScript, TestScript, User, Group):
     Result = proc.stdout.read().decode('utf8', 'replace')
     Print("stdout: " + Result)
     LG().Log('INFO', "stdout: " + Result)
-    Print("stderr: " + proc.stderr.read().decode('utf8', 'replace'))
-    LG().Log('INFO', "stderr: " +
-             proc.stderr.read().decode('utf8', 'replace'))
+    std_err = proc.stderr.read().decode('utf8', 'replace')
+    Print("stderr: " + std_err)
+    LG().Log('ERROR', "stderr: " + std_err)
 
     os.remove(path)
     return [exit_code, GetScript, SetScript, TestScript, User, Group, Result]

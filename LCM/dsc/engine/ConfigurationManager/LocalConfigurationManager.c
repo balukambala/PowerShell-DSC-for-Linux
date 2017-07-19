@@ -2399,6 +2399,13 @@ MI_EXTERN_C PAL_Uint32 THREAD_API Invoke_PerformRequiredConfigurationChecks_Inte
 
 ExitSimple:
     EndLcmOperation();
+    // If there is an error - send error reports
+    if (g_currentError[0] != '\0')
+    {
+        SetLCMStatusReady();
+        SetLCMStatusReady();
+        g_currentError[0] = '\0';
+    }
     SetLCMStatusReady();
     // Debug log
     DSC_EventWriteMethodEnd(__WFUNCTION__);
